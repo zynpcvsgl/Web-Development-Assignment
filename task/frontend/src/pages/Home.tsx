@@ -1,3 +1,4 @@
+// src/pages/Home.tsx
 import { useState, useEffect, useMemo } from "react";
 import {
   Container, Typography, Paper, Box,
@@ -8,6 +9,7 @@ import {
 import { SelectChangeEvent } from "@mui/material/Select";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
+import { api } from "../api"; // <-- ENV destekli axios instance
 
 interface User {
   id: number;
@@ -22,13 +24,11 @@ interface Post {
   title: string;
 }
 
-const API = "http://localhost:3000";
-
 export default function Home() {
   const [users, setUsers] = useState<User[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
-  // Filtre: "" = hepsi, "1" = user id 1
-  const [selectedUserId, setSelectedUserId] = useState<string>("");
+  // 0 = Hepsi; >0 = userId
+  const [selectedUserId, setSelectedUserId] = useState<number>(0);
 
   // Form alanları
   const [newName, setNewName] = useState("");
@@ -51,8 +51,18 @@ export default function Home() {
   const [rppPosts, setRppPosts] = useState(10);
 
   useEffect(() => {
-    fetch(`${API}/users`).then(r => r.json()).then(setUsers).catch(() => openToast("Kullanıcılar alınamadı", "error"));
-    fetch(`${API}/posts`).then(r => r.json()).then(setPosts).catch(() => openToast("Gönderiler alınamadı", "error"));
+    (async () => {
+      try {
+        const [u, p] = await Promise.all([
+          api.get<User[]>("/users"),
+          api.get<Post[]>("/posts"),
+        ]);
+        setUsers(u.data);
+        setPosts(p.data);
+      } catch {
+        openToast("Veriler alınamadı", "error");
+      }
+    })();
   }, []);
 
   // --- Filtrelenmiş kullanıcılar (Arama) ---
@@ -72,9 +82,8 @@ export default function Home() {
 
   // --- Gönderiler: kullanıcı filtresi ---
   const filteredPosts = useMemo(() => {
-    if (selectedUserId === "") return posts;
-    const id = parseInt(selectedUserId, 10);
-    return posts.filter(p => p.userId === id);
+    if (!selectedUserId) return posts; // 0 => Hepsi
+    return posts.filter(p => p.userId === selectedUserId);
   }, [posts, selectedUserId]);
 
   // --- Gönderiler için sayfalama ---
@@ -94,13 +103,10 @@ export default function Home() {
   const addUser = async () => {
     if (!newName || !newUsername || !emailOk) return;
     try {
-      const res = await fetch(`${API}/users`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newName, username: newUsername, email: newEmail })
+      const { data } = await api.post<User>("/users", {
+        name: newName, username: newUsername, email: newEmail
       });
-      const created = await res.json();
-      setUsers(prev => [...prev, created]);
+      setUsers(prev => [...prev, data]);
       setNewName(""); setNewUsername(""); setNewEmail("");
       openToast("Kullanıcı eklendi");
     } catch {
@@ -114,13 +120,8 @@ export default function Home() {
     const email = prompt("E-posta", u.email); if (email === null) return;
 
     try {
-      const res = await fetch(`${API}/users/${u.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, username, email })
-      });
-      const updated: User = await res.json();
-      setUsers(prev => prev.map(x => (x.id === u.id ? updated : x)));
+      const { data } = await api.patch<User>(`/users/${u.id}`, { name, username, email });
+      setUsers(prev => prev.map(x => (x.id === u.id ? data : x)));
       openToast("Kullanıcı güncellendi");
     } catch {
       openToast("Kullanıcı güncellenemedi", "error");
@@ -130,7 +131,7 @@ export default function Home() {
   const deleteUser = async (id: number) => {
     if (!confirm("Kullanıcıyı silmek istediğine emin misin?")) return;
     try {
-      await fetch(`${API}/users/${id}`, { method: "DELETE" });
+      await api.delete(`/users/${id}`);
       setUsers(prev => prev.filter(x => x.id !== id));
       setPosts(prev => prev.filter(p => p.userId !== id)); // o kullanıcıya ait postları listeden temizle
       openToast("Kullanıcı silindi");
@@ -141,16 +142,12 @@ export default function Home() {
 
   // --- CRUD: Posts ---
   const addPost = async () => {
-    if (selectedUserId === "" || !newPostTitle) return;
+    if (!selectedUserId || !newPostTitle) return;
     try {
-      const userId = parseInt(selectedUserId, 10);
-      const res = await fetch(`${API}/posts`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, title: newPostTitle })
+      const { data } = await api.post<Post>("/posts", {
+        userId: selectedUserId, title: newPostTitle
       });
-      const created: Post = await res.json();
-      setPosts(prev => [...prev, created]);
+      setPosts(prev => [...prev, data]);
       setNewPostTitle("");
       openToast("Gönderi eklendi");
     } catch {
@@ -162,13 +159,8 @@ export default function Home() {
     const title = prompt("Gönderi Başlığı", p.title);
     if (title === null) return;
     try {
-      const res = await fetch(`${API}/posts/${p.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title })
-      });
-      const updated: Post = await res.json();
-      setPosts(prev => prev.map(x => (x.id === p.id ? updated : x)));
+      const { data } = await api.patch<Post>(`/posts/${p.id}`, { title });
+      setPosts(prev => prev.map(x => (x.id === p.id ? data : x)));
       openToast("Gönderi güncellendi");
     } catch {
       openToast("Gönderi güncellenemedi", "error");
@@ -178,7 +170,7 @@ export default function Home() {
   const deletePost = async (id: number) => {
     if (!confirm("Gönderiyi silmek istediğine emin misin?")) return;
     try {
-      await fetch(`${API}/posts/${id}`, { method: "DELETE" });
+      await api.delete(`/posts/${id}`);
       setPosts(prev => prev.filter(x => x.id !== id));
       openToast("Gönderi silindi");
     } catch {
@@ -284,42 +276,40 @@ export default function Home() {
               labelId="user-filter-label"
               id="user-filter"
               label="Kullanıcı"
-              value={selectedUserId}              // string
-              displayEmpty
+              value={selectedUserId}
+              onChange={(e: SelectChangeEvent<number>) => setSelectedUserId(Number(e.target.value))}
               renderValue={(value) => {
-                if (value === "") return <span style={{ opacity: 0.6 }}>Hepsi</span>;
-                const u = users.find(x => x.id === parseInt(value as string, 10));
+                if (!value) return <span style={{ opacity: 0.6 }}>Hepsi</span>;
+                const u = users.find(x => x.id === value);
                 return u ? u.name : value;
               }}
-              onChange={(e) => setSelectedUserId(e.target.value as string)}
             >
-              <MenuItem value="">
+              <MenuItem value={0}>
                 <em>Hepsi</em>
               </MenuItem>
               {users.map(u => (
-                <MenuItem key={u.id} value={String(u.id)}>
+                <MenuItem key={u.id} value={u.id}>
                   {u.name}
                 </MenuItem>
               ))}
             </Select>
           </FormControl>
 
-
-          <TextField
-            label="Gönderi Başlığı"
-            value={newPostTitle}
-            onChange={e => setNewPostTitle(e.target.value)}
-            size="small"
-            sx={{ flex: 1, minWidth: 220 }}
-          />
-          <Button
-            variant="contained"
-            onClick={addPost}
-            sx={{ px: 3 }}
-            disabled={selectedUserId === "" || !newPostTitle}
-          >
-            Gönderi Ekle
-          </Button>
+            <TextField
+              label="Gönderi Başlığı"
+              value={newPostTitle}
+              onChange={e => setNewPostTitle(e.target.value)}
+              size="small"
+              sx={{ flex: 1, minWidth: 220 }}
+            />
+            <Button
+              variant="contained"
+              onClick={addPost}
+              sx={{ px: 3 }}
+              disabled={!selectedUserId || !newPostTitle}
+            >
+              Gönderi Ekle
+            </Button>
         </Box>
 
         <TableContainer>
