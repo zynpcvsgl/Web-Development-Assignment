@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "es2017",
+    "module": "commonjs",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+
+    /* NestJS için gerekli */
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+
+    /* Derleme çıktısı */
+    "outDir": "./dist",
+    "sourceMap": true,
+
+    /* Node.js tipleri için */
+    "types": ["node"]
+  },
+  "include": ["src", "prisma"],
+  "exclude": ["node_modules", "dist", "test", "**/*.spec.ts"]
+}
